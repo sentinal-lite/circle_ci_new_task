@@ -202,6 +202,7 @@ jobs:
           profile_name: <<parameters.aws_source_credentials_profile>>
       - run:
           command: |
+              systemctl start docker
               docker pull ${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_DEFAULT_REGION}.amazonaws.com/<<parameters.source_ecr_repo_name>>:<<parameters.source_image_tag>>
       - aws-ecr/ecr_login:
           public_registry: false 
