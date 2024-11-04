@@ -172,7 +172,7 @@ jobs:
           command: | 
             aws sts get-caller-identity --profile <<parameters.aws_profile>>
   docker-retag-push:
-    executor: aws-cli/default
+    executor: docker
     working_directory: ~/application
     parameters:
       source_environment:
@@ -195,11 +195,6 @@ jobs:
       - aws-cli/install
       - attach_workspace:
           at: .
-      - run:
-          name: Install Docker
-          command: |
-            sudo apt-get update
-            sudo apt-get install -y docker.io
       - aws-ecr/ecr_login:
           public_registry: false 
           use_credentials_helper: true 
