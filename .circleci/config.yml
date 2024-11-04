@@ -112,19 +112,19 @@ workflows:
           aws_profile: prod
           requires: 
             - docker-build-and-push
-      - docker-retag-push:
-          name: create-staging-tag
-          source_environment: dev
-          destination_environment: prod
-          source_ecr_repo_name: core-platform
-          destination_ecr_repo_name: core-platform
-          aws_source_credentials_profile: default
-          aws_destination_credentials_profile: prod
-          source_image_tag: test1
-          destination_image_tag: test2
-          requires:
-            - aws-setup
-          context: AWS
+      # - docker-retag-push:
+      #     name: create-staging-tag
+      #     source_environment: dev
+      #     destination_environment: prod
+      #     source_ecr_repo_name: core-platform
+      #     destination_ecr_repo_name: core-platform
+      #     aws_source_credentials_profile: default
+      #     aws_destination_credentials_profile: prod
+      #     source_image_tag: test1
+      #     destination_image_tag: test2
+      #     requires:
+      #       - aws-setup
+      #     context: AWS
 
 jobs:
   aws-setup:
