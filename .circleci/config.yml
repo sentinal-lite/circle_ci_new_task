@@ -172,8 +172,7 @@ jobs:
           command: | 
             aws sts get-caller-identity --profile <<parameters.aws_profile>>
   docker-retag-push:
-    docker:
-      - image: cimg/base:2024.11
+    executor: aws-cli/default
     working_directory: ~/application
     parameters:
       source_environment:
@@ -202,7 +201,6 @@ jobs:
           profile_name: <<parameters.aws_source_credentials_profile>>
       - run:
           command: |
-              systemctl start docker
               docker pull ${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_DEFAULT_REGION}.amazonaws.com/<<parameters.source_ecr_repo_name>>:<<parameters.source_image_tag>>
       - aws-ecr/ecr_login:
           public_registry: false 
@@ -210,7 +208,7 @@ jobs:
           profile_name: <<parameters.aws_destination_credentials_profile>>
       - run:
           command: |
-              ocker tag ${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_DEFAULT_REGION}.amazonaws.com/<<parameters.source_ecr_repo_name>>:<<parameters.source_image_tag>> ${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_DEFAULT_REGION}.amazonaws.com/<<parameters.destination_ecr_repo_name>>:<<parameters.destination_image_tag>>
+              docker tag ${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_DEFAULT_REGION}.amazonaws.com/<<parameters.source_ecr_repo_name>>:<<parameters.source_image_tag>> ${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_DEFAULT_REGION}.amazonaws.com/<<parameters.destination_ecr_repo_name>>:<<parameters.destination_image_tag>>
       - aws-ecr/ecr_login:
           public_registry: false 
           use_credentials_helper: true 
