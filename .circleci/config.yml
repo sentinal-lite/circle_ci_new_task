@@ -199,6 +199,10 @@ jobs:
           public_registry: false 
           use_credentials_helper: true 
           profile_name: <<parameters.aws_source_credentials_profile>>
+      - run:
+          command: |
+              aws sts get-caller-identity --profile <<parameters.aws_source_credentials_profile>>
+              docker pull ${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_DEFAULT_REGION}.amazonaws.com/<<parameters.source_ecr_repo_name>>:<<parameters.source_image_tag>>
       - aws-ecr/ecr_login:
           public_registry: false 
           use_credentials_helper: true 
@@ -206,8 +210,7 @@ jobs:
       - run:
           command: |
               aws sts get-caller-identity --profile <<parameters.aws_destination_credentials_profile>>
-              docker pull ${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_DEFAULT_REGION}.amazonaws.com/<<parameters.source_ecr_repo_name>>:<<parameters.source_image_tag>>
-              docker tag ${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_DEFAULT_REGION}.amazonaws.com/<<parameters.source_ecr_repo_name>>:<<parameters.source_image_tag>> ${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_DEFAULT_REGION}.amazonaws.com/<<parameters.destination_ecr_repo_name>>:<<parameters.destination_image_tag>>
+              ocker tag ${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_DEFAULT_REGION}.amazonaws.com/<<parameters.source_ecr_repo_name>>:<<parameters.source_image_tag>> ${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_DEFAULT_REGION}.amazonaws.com/<<parameters.destination_ecr_repo_name>>:<<parameters.destination_image_tag>>
       - aws-ecr/ecr_login:
           public_registry: false 
           use_credentials_helper: true 
