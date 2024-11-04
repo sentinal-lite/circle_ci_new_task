@@ -94,7 +94,7 @@ commands:
 
 workflows:
   version: 2
-  pr-workflow:
+  say-hello-workflow:
     jobs:
       - notify:
           context: slack-secrets
