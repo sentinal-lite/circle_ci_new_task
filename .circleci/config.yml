@@ -200,7 +200,8 @@ jobs:
       - aws-cli/install
       - attach_workspace:
           at: .
-
+      - run: |
+          cat bash.env >> $BASH_ENV
       - aws-ecr/ecr_login:
           public_registry: false 
           use_credentials_helper: true 
@@ -279,6 +280,16 @@ jobs:
           public_registry: false 
           repo: <<parameters.ecr_repo_name>> 
           tag: <<parameters.docker_image_tag>>
+      - run: |
+          echo "export BUILD_NUM=${CIRCLE_BUILD_NUM}" >> $BASH_ENV
+      - run: |
+          printenv BUILD_NUM
+      - run: |
+          cp $BASH_ENV bash.env
+      - persist_to_workspace:
+          root: .
+          paths:
+            - bash.env
   set-ecs-variables:
     executor:
       name: aws-ecr/default
