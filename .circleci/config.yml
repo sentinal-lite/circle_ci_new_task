@@ -195,7 +195,7 @@ jobs:
       - image: ${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_DEFAULT_REGION}.amazonaws.com/<<parameters.source_ecr_repo_name>>:<<parameters.source_image_tag>>
         aws_auth:
           aws_access_key_id: ${AWS_ACCESS_KEY_ID}
-           aws_secret_access_key: ${AWS_SECRET_ACCESS_KEY}
+          aws_secret_access_key: ${AWS_SECRET_ACCESS_KEY}
     steps:
       - aws-cli/install
       - attach_workspace:
