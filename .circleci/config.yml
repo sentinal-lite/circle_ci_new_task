@@ -1,31 +1,311 @@
-# Use the latest 2.1 version of CircleCI pipeline process engine.
-# See: https://circleci.com/docs/configuration-reference
 version: 2.1
 
-# Define a job to be invoked later in a workflow.
-# See: https://circleci.com/docs/jobs-steps/#jobs-overview & https://circleci.com/docs/configuration-reference/#jobs
-jobs:
-  say-hello:
-    # Specify the execution environment. You can specify an image from Docker Hub or use one of our convenience images from CircleCI's Developer Hub.
-    # See: https://circleci.com/docs/executor-intro/ & https://circleci.com/docs/configuration-reference/#executor-job
-    docker:
-      # Specify the version you desire here
-      # See: https://circleci.com/developer/images/image/cimg/base
-      - image: cimg/base:current
+orbs:
+  python: circleci/python@2.1.1
+  slack: circleci/slack@4.9.3
+  aws-cli: circleci/aws-cli@5.1
+  aws-ecr: circleci/aws-ecr@9.3.4
+  docker: circleci/docker@1.7.0
 
-    # Add steps to the job
-    # See: https://circleci.com/docs/jobs-steps/#steps-overview & https://circleci.com/docs/configuration-reference/#steps
+parameters:
+  org_name:
+    type: string
+    default: "inhouse"
+  app_name:
+    type: string
+    default: "core-platform"
+  build_path:
+    type: string
+    default: "."
+  dockerfile_name:
+    type: string
+    default: "Dockerfile"
+  extra_build_args:
+    type: string
+    default: ""
+  dockerfile_path:
+    type: string
+    default: "docker"
+  aws_profile:
+    type: string
+    default: "default"
+  kms_key_id:
+    type: string
+    default: ""
+commands:
+  inject_variable:
+    description: "This will make sure the persistant state is managed"
+    parameters:
+      key:
+        type: string
+      value:
+        type: string
     steps:
-      # Checkout the code as the first step.
+      - run: |
+          echo "export <<parameters.key>>=<<parameters.value>>" >> $BASH_ENV
+          echo "Key $key injected with $value"
+          cp $BASH_ENV bash.env
+      - persist_to_workspace:
+          root: .
+          paths:
+            - bash.env
+  load_variables:
+    description: "This will provide the shared environment variables"
+    steps:
+      - attach_workspace:
+          at: .
+      - run: |
+          cat bash.env >> $BASH_ENV
+  success-slack:
+    description: "This is dynamic slack notification to use when an event is success only."
+    steps:
+      - slack/notify:
+          event: pass
+          template: success_tagged_deploy_1
+  failure-slack:
+    description: "This is dynamic slack notification to use when an event is success only."
+    steps:
+      - slack/notify:
+          event: fail
+          template: basic_fail_1
+  slack-notification-customized:
+    description: "This is dynamic slack notification to use."
+    parameters:
+      message:
+        type: string
+        default: "Circle CI Job started for project ${CIRCLE_PROJECT_REPONAME} on ${CIRCLE_BRANCH} branch"
+    steps:
+      - slack/notify:
+          custom: |
+            {
+              "blocks": [
+                {
+                  "type": "section",
+                  "fields": [
+                    {
+                      "type": "plain_text",
+                      "text": "<<parameters.message>>",
+                      "emoji": true
+                    }
+                  ]
+                }
+              ]
+            }
+
+workflows:
+  version: 2
+  pr-workflow:
+    jobs:
+      - notify:
+          context: slack-secrets
+      - set-ecs-variables
+      - docker-build-and-push:
+          context: AWS_NON-PROD
+      - aws-setup:
+          name: non-production-account
+          context: AWS_NON-PROD
+          requires: 
+            - docker-build-and-push
+      - aws-setup:
+          name: production-account
+          context: AWS_PROD
+          aws_profile: prod
+          requires: 
+            - docker-build-and-push
+      - docker-retag-push:
+          name: create-staging-tag
+          source_environment: dev
+          destination_environment: prod
+          source_ecr_repo_name: core-platform
+          destination_ecr_repo_name: core-platform
+          aws_source_credentials_profile: default
+          aws_destination_credentials_profile: prod
+          source_image_tag: test1
+          destination_image_tag: test2
+          requires:
+            - aws-setup
+          context: AWS
+
+jobs:
+  aws-setup:
+    parameters:
+      aws_profile:
+        description: |
+          Profile name to use with the configured AWS Secret and AWS
+          Keys.
+        type: string
+        default: default
+      aws_access_key_id:
+        description: |
+          AWS access key id for IAM role. Set this to the name of
+          the environment variable you will use to hold this
+          value, i.e. AWS_ACCESS_KEY.
+        type: string
+        default: AWS_ACCESS_KEY_ID
+      aws_secret_access_key:
+        description: |
+          AWS secret key for IAM role. Set this to the name of
+          the environment variable you will use to hold this
+          value, i.e. AWS_SECRET_ACCESS_KEY.
+        type: string
+        default: AWS_SECRET_ACCESS_KEY
+      region:
+        description: |
+          AWS region to operate in
+          (defaults to env var of ${AWS_DEFAULT_REGION})
+        type: string
+        default: ${AWS_DEFAULT_REGION}
+    executor: aws-cli/default
+    working_directory: ~/application
+    steps:
+      - aws-cli/setup:
+          profile_name: <<parameters.aws_profile>>
+          aws_access_key_id: <<parameters.aws_access_key_id>>
+          aws_secret_access_key: <<parameters.aws_secret_access_key>> 
+          region: <<parameters.region>>
+      - persist_to_workspace:
+          root: ~/application
+          paths:
+            - .
+      - run: 
+          command: | 
+            aws sts get-caller-identity --profile <<parameters.aws_profile>>
+  docker-retag-push:
+    executor: aws-cli/default
+    working_directory: ~/application
+    parameters:
+      source_environment:
+        type: string
+      destination_environment:
+        type: string
+      source_ecr_repo_name:
+        type: string
+      destination_ecr_repo_name:
+        type: string
+      aws_source_credentials_profile:
+        type: string
+      aws_destination_credentials_profile:
+        type: string
+      source_image_tag:
+        type: string
+      destination_image_tag:
+        type: string
+    steps:
+      - aws-cli/install
+      - attach_workspace:
+          at: .
+      - aws-ecr/ecr_login:
+          public_registry: false 
+          use_credentials_helper: true 
+          profile_name: <<parameters.aws_source_credentials_profile>>
+      - aws-ecr/ecr_login:
+          public_registry: false 
+          use_credentials_helper: true 
+          profile_name: <<parameters.aws_destination_credentials_profile>>
+      - run:
+          command: |
+              aws sts get-caller-identity --profile <<parameters.aws_destination_credentials_profile>>
+              docker pull ${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_DEFAULT_REGION}.amazonaws.com/<<parameters.source_ecr_repo_name>>:<<parameters.source_image_tag>>
+              docker tag ${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_DEFAULT_REGION}.amazonaws.com/<<parameters.source_ecr_repo_name>>:<<parameters.source_image_tag>> ${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_DEFAULT_REGION}.amazonaws.com/<<parameters.destination_ecr_repo_name>>:<<parameters.destination_image_tag>>
+      - aws-ecr/ecr_login:
+          public_registry: false 
+          use_credentials_helper: true 
+          profile_name: <<parameters.aws_destination_credentials_profile>>
+      
+      # - run:
+      
+      #     command: |
+      #       # Authenticate to source and destination ECR
+      #       aws ecr get-login-password --profile <<parameters.aws_source_credentials_profile>> --region $AWS_DEFAULT_REGION | docker login --username AWS --password-stdin ${AWS_ACCOUNT_ID}.dkr.ecr.$AWS_DEFAULT_REGION.amazonaws.com/<<parameters.source_ecr_repo_name>>
+      #       aws ecr get-login-password --profile <<parameters.aws_destination_credentials_profile>> --region $AWS_DEFAULT_REGION | docker login --username AWS --password-stdin ${AWS_ACCOUNT_ID}.dkr.ecr.$AWS_DEFAULT_REGION.amazonaws.com/<<parameters.destination_ecr_repo_name>>
+        
+      #       # Pull the image from source ECR
+      #       docker pull ${AWS_ACCOUNT_ID}.dkr.ecr.$AWS_DEFAULT_REGION.amazonaws.com/<<parameters.source_ecr_repo_name>>:<<parameters.source_image_tag>>
+        
+      #       # Tag the image for the destination
+      #       docker tag ${AWS_ACCOUNT_ID}.dkr.ecr.$AWS_DEFAULT_REGION.amazonaws.com/<<parameters.source_ecr_repo_name>>:<<parameters.source_image_tag>> ${AWS_ACCOUNT_ID}.dkr.ecr.$AWS_DEFAULT_REGION.amazonaws.com/<<parameters.destination_ecr_repo_name>>:<<parameters.destination_image_tag>>
+
+      #       AWS_PROFILE=${AWS_}
+
+      #       # Push the image to destination ECR
+      #       docker push ${AWS_ACCOUNT_ID}.dkr.ecr.$AWS_DEFAULT_REGION.amazonaws.com/<<parameters.destination_ecr_repo_name>>:<<parameters.destination_image_tag>>
+  docker-build-and-push:
+    parameters:
+      ecr_repo_name:
+        type: string
+        default: <<pipeline.parameters.app_name>>
+      docker_image_tag:
+        type: string
+        default: ${CIRCLE_BRANCH}-${CIRCLE_SHA1}-${CIRCLE_BUILD_NUM}
+      aws_profile:
+        type: string
+        default: default
+    executor:
+      name: aws-ecr/default
+    working_directory: ~/application
+    steps:
       - checkout
       - run:
-          name: "Say hello"
-          command: "echo Hello, World!"
+          command: |
+            aws --version
+            jq --version
+      - docker/build:
+          debug: false 
+          docker-context: <<pipeline.parameters.build_path>> 
+          dockerfile: <<pipeline.parameters.dockerfile_name>> 
+          extra_build_args: <<pipeline.parameters.extra_build_args>> 
+          path: <<pipeline.parameters.dockerfile_path>> 
+          lint-dockerfile: false 
+          image: ${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_DEFAULT_REGION}.amazonaws.com/<<parameters.ecr_repo_name>> 
+          tag: <<parameters.docker_image_tag>>
+          treat-warnings-as-errors: false 
+      - run:
+          command: | 
+            echo "Docker Image built with tag ${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_DEFAULT_REGION}.amazonaws.com/<<pipeline.parameters.app_name>>:${CIRCLE_BRANCH}-${CIRCLE_SHA1}-${CIRCLE_BUILD_NUM}"
+      - aws-ecr/ecr_login:
+          public_registry: false 
+          use_credentials_helper: true 
+          profile_name: <<parameters.aws_profile>>
+      - aws-ecr/push_image:
+          public_registry: false 
+          repo: <<parameters.ecr_repo_name>> 
+          tag: <<parameters.docker_image_tag>>
+  set-ecs-variables:
+    executor:
+      name: aws-ecr/default
+    steps:
+      - inject_variable:
+          key: "TESTING"
+          value: "<<pipeline.parameters.app_name>>"
+  notify: 
+    parameters:
+      message:
+        type: string
+        default: "Circle CI Job started for project ${CIRCLE_PROJECT_REPONAME} on ${CIRCLE_BRANCH} branch"
+    docker:
+      - image: 'cimg/base:stable'
+    steps:
+      - slack-notification-customized:
+          message: "<<parameters.message>>"
 
-# Orchestrate jobs using workflows
-# See: https://circleci.com/docs/workflows/ & https://circleci.com/docs/configuration-reference/#workflows
-workflows:
-  say-hello-workflow: # This is the name of the workflow, feel free to change it to better match your workflow.
-    # Inside the workflow, you define the jobs you want to run.
-    jobs:
-      - say-hello
+  slack-notification:
+    docker:
+      - image: cimg/python:3.12
+    steps:
+      - run:
+          name: slack-notification
+          command: echo "Sending to slack"
+      - run:
+          name: slack-notification done
+          command: echo "Notification done"
+
+  waiter:
+    docker:
+      - image: cimg/python:3.12
+    steps:
+      - run: |
+          while [[ $(curl --location --request GET "https://circleci.com/api/v2/workflow/$CIRCLE_WORKFLOW_ID/job" --header "Circle-Token: $CCI_Token"| jq -r '.items[]|select(.name != "waiter")|.status' | grep -c "running") -gt 0 ]]
+            do
+              sleep 1
+            done
+      - run: echo "All required jobs have now completed"
