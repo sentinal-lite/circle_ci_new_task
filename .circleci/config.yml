@@ -172,7 +172,7 @@ jobs:
           command: | 
             aws sts get-caller-identity --profile <<parameters.aws_profile>>
   docker-retag-push:
-    executor: docker/default
+    executor: aws-cli/default
     working_directory: ~/application
     parameters:
       source_environment:
@@ -195,6 +195,11 @@ jobs:
       - aws-cli/install
       - attach_workspace:
           at: .
+      - run:
+          name: Install Docker
+          command: |
+            sudo apt-get update
+            sudo apt-get install -y docker.io
       - aws-ecr/ecr_login:
           public_registry: false 
           use_credentials_helper: true 
@@ -208,7 +213,7 @@ jobs:
           profile_name: <<parameters.aws_destination_credentials_profile>>
       - run:
           command: |
-              docker tag ${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_DEFAULT_REGION}.amazonaws.com/<<parameters.source_ecr_repo_name>>:<<parameters.source_image_tag>> ${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_DEFAULT_REGION}.amazonaws.com/<<parameters.destination_ecr_repo_name>>:<<parameters.destination_image_tag>>
+              ocker tag ${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_DEFAULT_REGION}.amazonaws.com/<<parameters.source_ecr_repo_name>>:<<parameters.source_image_tag>> ${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_DEFAULT_REGION}.amazonaws.com/<<parameters.destination_ecr_repo_name>>:<<parameters.destination_image_tag>>
       - aws-ecr/ecr_login:
           public_registry: false 
           use_credentials_helper: true 
