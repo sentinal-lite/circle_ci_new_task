@@ -201,7 +201,6 @@ jobs:
           profile_name: <<parameters.aws_source_credentials_profile>>
       - run:
           command: |
-              aws sts get-caller-identity --profile <<parameters.aws_source_credentials_profile>>
               docker pull ${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_DEFAULT_REGION}.amazonaws.com/<<parameters.source_ecr_repo_name>>:<<parameters.source_image_tag>>
       - aws-ecr/ecr_login:
           public_registry: false 
@@ -209,8 +208,7 @@ jobs:
           profile_name: <<parameters.aws_destination_credentials_profile>>
       - run:
           command: |
-              aws sts get-caller-identity --profile <<parameters.aws_destination_credentials_profile>>
-              ocker tag ${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_DEFAULT_REGION}.amazonaws.com/<<parameters.source_ecr_repo_name>>:<<parameters.source_image_tag>> ${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_DEFAULT_REGION}.amazonaws.com/<<parameters.destination_ecr_repo_name>>:<<parameters.destination_image_tag>>
+              docker tag ${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_DEFAULT_REGION}.amazonaws.com/<<parameters.source_ecr_repo_name>>:<<parameters.source_image_tag>> ${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_DEFAULT_REGION}.amazonaws.com/<<parameters.destination_ecr_repo_name>>:<<parameters.destination_image_tag>>
       - aws-ecr/ecr_login:
           public_registry: false 
           use_credentials_helper: true 
@@ -219,6 +217,7 @@ jobs:
       # - run:
       
       #     command: |
+      #       aws sts get-caller-identity --profile <<parameters.aws_source_credentials_profile>>
       #       # Authenticate to source and destination ECR
       #       aws ecr get-login-password --profile <<parameters.aws_source_credentials_profile>> --region $AWS_DEFAULT_REGION | docker login --username AWS --password-stdin ${AWS_ACCOUNT_ID}.dkr.ecr.$AWS_DEFAULT_REGION.amazonaws.com/<<parameters.source_ecr_repo_name>>
       #       aws ecr get-login-password --profile <<parameters.aws_destination_credentials_profile>> --region $AWS_DEFAULT_REGION | docker login --username AWS --password-stdin ${AWS_ACCOUNT_ID}.dkr.ecr.$AWS_DEFAULT_REGION.amazonaws.com/<<parameters.destination_ecr_repo_name>>
