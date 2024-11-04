@@ -191,26 +191,16 @@ jobs:
         type: string
       destination_image_tag:
         type: string
+    docker:
+      - image: ${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_DEFAULT_REGION}.amazonaws.com/<<parameters.source_ecr_repo_name>>:<<parameters.source_image_tag>>
+        aws_auth:
+          aws_access_key_id: $AWS_ACCESS_KEY_ID
+           aws_secret_access_key: $AWS_SECRET_ACCESS_KEY
     steps:
       - aws-cli/install
       - attach_workspace:
           at: .
-      - run:
-          command: |
-              sudo apt-get update
-              sudo apt-get install ca-certificates curl
-              sudo install -m 0755 -d /etc/apt/keyrings
-              sudo curl -fsSL https://download.docker.com/linux/ubuntu/gpg -o /etc/apt/keyrings/docker.asc
-              sudo chmod a+r /etc/apt/keyrings/docker.asc
-              echo \
-                "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.asc] https://download.docker.com/linux/ubuntu \
-                $(. /etc/os-release && echo "$VERSION_CODENAME") stable" | \
-                sudo tee /etc/apt/sources.list.d/docker.list > /dev/null
-              sudo apt-get update
-              sudo apt-get install docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
-              sudo service --status-all 
-              sudo service docker start
-              sudo docker run hello-world
+
       - aws-ecr/ecr_login:
           public_registry: false 
           use_credentials_helper: true 
