@@ -171,6 +171,7 @@ jobs:
       - run: 
           command: | 
             aws sts get-caller-identity --profile <<parameters.aws_profile>>
+
   docker-retag-push:
     executor: aws-cli/default
     working_directory: ~/application
@@ -192,7 +193,7 @@ jobs:
       destination_image_tag:
         type: string
     docker:
-      - image: ${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_DEFAULT_REGION}.amazonaws.com/<<pipeline.parameters.app_name>>:${CIRCLE_BRANCH}-${CIRCLE_SHA1}-${BUILD_NUM}
+      - image: ${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_DEFAULT_REGION}.amazonaws.com/<<pipeline.parameters.app_name>>:${CIRCLE_BRANCH}-${CIRCLE_SHA1}
         aws_auth:
           aws_access_key_id: ${AWS_ACCESS_KEY_ID}
           aws_secret_access_key: ${AWS_SECRET_ACCESS_KEY}
@@ -221,24 +222,6 @@ jobs:
           use_credentials_helper: true 
           profile_name: <<parameters.aws_destination_credentials_profile>>
       
-      # - run:
-      
-      #     command: |
-      #       aws sts get-caller-identity --profile <<parameters.aws_source_credentials_profile>>
-      #       # Authenticate to source and destination ECR
-      #       aws ecr get-login-password --profile <<parameters.aws_source_credentials_profile>> --region $AWS_DEFAULT_REGION | docker login --username AWS --password-stdin ${AWS_ACCOUNT_ID}.dkr.ecr.$AWS_DEFAULT_REGION.amazonaws.com/<<parameters.source_ecr_repo_name>>
-      #       aws ecr get-login-password --profile <<parameters.aws_destination_credentials_profile>> --region $AWS_DEFAULT_REGION | docker login --username AWS --password-stdin ${AWS_ACCOUNT_ID}.dkr.ecr.$AWS_DEFAULT_REGION.amazonaws.com/<<parameters.destination_ecr_repo_name>>
-        
-      #       # Pull the image from source ECR
-      #       docker pull ${AWS_ACCOUNT_ID}.dkr.ecr.$AWS_DEFAULT_REGION.amazonaws.com/<<parameters.source_ecr_repo_name>>:<<parameters.source_image_tag>>
-        
-      #       # Tag the image for the destination
-      #       docker tag ${AWS_ACCOUNT_ID}.dkr.ecr.$AWS_DEFAULT_REGION.amazonaws.com/<<parameters.source_ecr_repo_name>>:<<parameters.source_image_tag>> ${AWS_ACCOUNT_ID}.dkr.ecr.$AWS_DEFAULT_REGION.amazonaws.com/<<parameters.destination_ecr_repo_name>>:<<parameters.destination_image_tag>>
-
-      #       AWS_PROFILE=${AWS_}
-
-      #       # Push the image to destination ECR
-      #       docker push ${AWS_ACCOUNT_ID}.dkr.ecr.$AWS_DEFAULT_REGION.amazonaws.com/<<parameters.destination_ecr_repo_name>>:<<parameters.destination_image_tag>>
   docker-build-and-push:
     parameters:
       ecr_repo_name:
@@ -246,7 +229,7 @@ jobs:
         default: <<pipeline.parameters.app_name>>
       docker_image_tag:
         type: string
-        default: ${CIRCLE_BRANCH}-${CIRCLE_SHA1}-${CIRCLE_BUILD_NUM}
+        default: ${CIRCLE_BRANCH}-${CIRCLE_SHA1}
       aws_profile:
         type: string
         default: default
