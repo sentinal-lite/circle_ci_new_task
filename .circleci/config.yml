@@ -1,21 +1,267 @@
 version: 2.1
-executors:
-  my-custom-executor:
-    docker:
-      - image: cimg/base:stable
-        auth:
-          # ensure you have first added these secrets
-          # visit app.circleci.com/settings/project/github/sentinal-lite/circle_ci_new_task/environment-variables
-          username: $DOCKER_HUB_USER
-          password: $DOCKER_HUB_PASSWORD
-jobs:
-  inhouse-workflow:
-    executor: my-custom-executor
+
+orbs:
+  docker: circleci/docker@2.8.1
+  slack: circleci/slack@5.1.0
+  aws-ecr: circleci/aws-ecr@9.3.6
+  aws-cli: circleci/aws-cli@5.1.1
+  python: circleci/python@2.2.0
+
+parameters:
+  org_name:
+    type: string
+    default: "inhouse"
+  app_name:
+    type: string
+    default: "core-platform"
+  build_path:
+    type: string
+    default: "."
+  dockerfile_name:
+    type: string
+    default: "Dockerfile"
+  extra_build_args:
+    type: string
+    default: ""
+  dockerfile_path:
+    type: string
+    default: "docker"
+  aws_profile:
+    type: string
+    default: "default"
+
+commands:
+  inject_variable:
+    description: "This will make sure the persistant state is managed"
+    parameters:
+      keys:
+        type: string
+      values:
+        type: string
     steps:
-      - checkout
       - run: |
-          # echo Hello, World!
+          # Split the strings into arrays
+          IFS=',' read -r -a keys_array < <(echo "<<parameters.keys>>")
+          IFS=',' read -r -a values_array < <(echo "<<parameters.values>>")
+          for i in "${!keys_array[@]}"; do
+              echo "export ${keys_array[i]}=${values_array[i]}" >> $BASH_ENV
+          done
+          echo "Environment variables have been dumped to bash.env"
+          cp $BASH_ENV bash.env
+      - persist_to_workspace:
+          root: .
+          paths:
+            - bash.env
+  load_variables:
+    description: "This will provide the shared environment variables"
+    steps:
+      - attach_workspace:
+          at: .
+      - run: |
+          cat bash.env >> $BASH_ENV
+  success-slack:
+    description: "This is dynamic slack notification to use when an event is success only."
+    steps:
+      - slack/notify:
+          event: pass
+          template: success_tagged_deploy_1
+  failure-slack:
+    description: "This is dynamic slack notification to use when an event is success only."
+    steps:
+      - slack/notify:
+          event: fail
+          template: basic_fail_1
+  slack-notification-customized:
+    description: "This is dynamic slack notification to use."
+    parameters:
+      message:
+        type: string
+        default: "Circle CI Job started for project ${CIRCLE_PROJECT_REPONAME} on ${CIRCLE_BRANCH} branch"
+    steps:
+      - slack/notify:
+          custom: |
+            {
+              "blocks": [
+                {
+                  "type": "section",
+                  "fields": [
+                    {
+                      "type": "plain_text",
+                      "text": "<<parameters.message>>",
+                      "emoji": true
+                    }
+                  ]
+                }
+              ]
+            }
+
+
+jobs:
+    notify: 
+      parameters:
+        message:
+          type: string
+          default: "Circle CI Job started for project ${CIRCLE_PROJECT_REPONAME} on ${CIRCLE_BRANCH} branch"
+      docker:
+        - image: 'cimg/base:stable'
+      steps:
+        - slack-notification-customized:
+            message: "<<parameters.message>>"
+
 workflows:
-  my-custom-workflow:
+  inhouse-core-workflow:
     jobs:
-      - inhouse-workflow
+      - notify:
+          context: slack-secrets
+
+      - linting:
+          name: pr-lint-test
+          filters:
+            branches:
+              only:
+                - /.*/
+              ignore:
+                - main
+                - master
+                - dev
+                - staging
+          require:
+            - notify
+
+      - unit-tests:
+          name: check-pr-unit-test
+          filters:
+            branches:
+              only:
+                - /.*/
+              ignore:
+                - main
+                - master
+                - dev
+                - staging
+          require:
+            - pr-lint-test
+
+# PR goes to Reviewer / Maintainer 
+
+      - notify:
+          name: send-approval-feature-to-dev-notification
+          context: slack-secrets
+          message: PR approval waiting -> ${CIRCLE_PULL_REQUEST}
+
+      - dev-approval:
+          type: approval
+          require:
+            - send-approval-feature-to-dev-notification
+
+      - check-pr-merged-or-not:
+          name: check-feature-to-dev-pr-merged-or-not
+
+# Dev-workflow starts
+      - notify:
+          context: slack-secrets
+          message: Dev environment workflow §
+          require:
+            - check-feature-to-dev-pr-merged-or-not
+
+      - docker-build-and-push:
+          name: dev-build-ecr
+
+      - deploy-ecs-service:
+          name: dev-environment-deployment
+          require:
+            - dev-build-ecr
+
+      - notify:
+          context: slack-secrets
+          message: Dev deployment finished!
+          require:
+            - dev-environment-deployment
+
+# For adding sanity tests or other tests
+# More tests (if any)
+
+      - notify:
+          name: send-staging-approval-slack-notification
+          context: slack-secrets
+          message: Waiting for approval
+          requires:
+            - dev-environment-deployment
+
+      - staging-approval:
+          type: approval
+          require:
+            - send-staging-approval-slack-notification
+
+      - create-pr:
+          name: pr-from-dev-to-staging-branch
+          source_branch: dev
+          target_branch: staging
+          pr_title:
+          pr_body:
+
+# PR goes to Reviewer / Maintainer 
+      - notify:
+          name: send-approval-dev-to-staging-notification
+          context: slack-secrets
+          message: PR approval waiting -> ${CIRCLE_PULL_REQUEST}
+          requires:
+            - pr-from-dev-to-staging-branch
+
+      - dev-approval:
+          type: approval
+          require:
+            - send-approval-dev-to-staging-notification
+
+      - check-pr-merged-or-not:
+          name: check-dev-to-staging-pr-merged-or-not
+          require:
+            - pr-from-dev-to-staging-branch
+# Staging-workflow starts
+      - notify:
+          context: slack-secrets
+          message: Staging environment workflow §
+          require:
+            - check-dev-to-staging-pr-merged-or-not
+      - docker-build-and-push:
+          name: staging-build-ecr
+      - deploy-ecs-service:
+          name: staging-environment-deployment
+          require:
+            - staging-build-ecr
+      - notify:
+          context: slack-secrets
+          message: Staging deployment finished!
+          require:
+            - staging-environment-deployment
+# For adding sanity tests or other tests
+# More tests (if any)
+      - slack/on-hold:
+          name: send-production-approval-slack-notification
+          context: slack-secrets
+          requires:
+            - staging-environment-deployment
+      - production-approval:
+          type: approval
+          require:
+            - send-production-approval-slack-notification
+      - docker-retag-and push:
+      - deploy-ecs-service:
+          name: prod
+      - create-pr:
+          name: pr-from-staging-to-master-branch
+          source_branch: dev
+          target_branch: staging
+          pr_title:
+          pr_body:
+      - notify:
+          name: send-approval-staging-to-prod-notification
+          context: slack-secrets
+          message: PR approval waiting -> ${CIRCLE_PULL_REQUEST}
+          requires:
+            - pr-from-stating-to-master-branch
+
+      - dev-approval:
+          type: approval
+          require:
+            - send-approval-staging-to-prod-notification
