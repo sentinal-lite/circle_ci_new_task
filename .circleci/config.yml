@@ -270,15 +270,15 @@ jobs:
         - run:
             command: |
                 echo "PR raised!"
-        # - run:
-        #     command: |
-        #         curl -L \
-        #         -X POST \
-        #         -H "Accept: application/vnd.github+json" \
-        #         -H "Authorization: Bearer ${GITHUB_REPO_TOKEN}" \
-        #         -H "X-GitHub-Api-Version: 2022-11-28" \
-        #         https://api.github.com/repos/${CIRCLE_PROJECT_USERNAME}/${CIRCLE_PROJECT_REPONAME}/pulls \
-        #         -d '{"title": <<parameters.pr_title>>,"body": <<parameters.pr_body>>,"head": <<parameters.source_branch>>,"base": <<parameters.target_branch>>}'
+        - run:
+            command: |
+                curl -L \
+                -X POST \
+                -H "Accept: application/vnd.github+json" \
+                -H "Authorization: Bearer ${GITHUB_REPO_TOKEN}" \
+                -H "X-GitHub-Api-Version: 2022-11-28" \
+                https://api.github.com/repos/${CIRCLE_PROJECT_USERNAME}/${CIRCLE_PROJECT_REPONAME}/pulls \
+                -d '{"title": <<parameters.pr_title>>,"body": <<parameters.pr_body>>,"head": <<parameters.source_branch>>,"base": <<parameters.target_branch>>}'
 
     docker-retag-push:
       executor: aws-cli/default
@@ -301,40 +301,44 @@ jobs:
         destination_image_tag:
           type: string
       steps:
-        - load_variables
-        - aws-cli/install
-        - aws-cli/setup:
-            profile_name: <<parameters.aws_source_credentials_profile>>
-        - aws-cli/setup:
-            profile_name: <<parameters.aws_destination_credentials_profile>>
-            aws_access_key_id: AWS_PROD_AWS_ACCESS_KEY_ID
-            aws_secret_access_key: AWS_PROD_SECRET_KEY_ID
-            region: AWS_PROD_DEFAULT_REGION
-        - attach_workspace:
-            at: .
-        - aws-ecr/ecr_login:
-            public_registry: false 
-            use_credentials_helper: false 
-            profile_name: <<parameters.aws_source_credentials_profile>>
-        - setup_remote_docker
+        # - load_variables
+        # - aws-cli/install
+        # - aws-cli/setup:
+        #     profile_name: <<parameters.aws_source_credentials_profile>>
+        # - aws-cli/setup:
+        #     profile_name: <<parameters.aws_destination_credentials_profile>>
+        #     aws_access_key_id: AWS_PROD_AWS_ACCESS_KEY_ID
+        #     aws_secret_access_key: AWS_PROD_SECRET_KEY_ID
+        #     region: AWS_PROD_DEFAULT_REGION
+        # - attach_workspace:
+        #     at: .
+        # - aws-ecr/ecr_login:
+        #     public_registry: false 
+        #     use_credentials_helper: false 
+        #     profile_name: <<parameters.aws_source_credentials_profile>>
+        # - setup_remote_docker
+        # - run:
+        #     command: |
+        #       printenv
+        #       docker --version
+        #       docker pull ${SOURCE_IMAGE_URI}
+        #       docker tag ${SOURCE_IMAGE_URI} ${AWS_PROD_ACCOUNT_ID}.dkr.ecr.${AWS_PROD_DEFAULT_REGION}.amazonaws.com/<<parameters.destination_ecr_repo_name>>:${DESTINATION_IMAGE_TAG}
+        # - aws-ecr/ecr_login:
+        #     account_id: ${AWS_PROD_ACCOUNT_ID}
+        #     region: ${AWS_PROD_DEFAULT_REGION}
+        #     public_registry: false 
+        #     use_credentials_helper: false 
+        #     profile_name: <<parameters.aws_destination_credentials_profile>>
+        # - aws-ecr/push_image:
+        #     public_registry: false 
+        #     repo: <<parameters.destination_ecr_repo_name>> 
+        #     tag: ${SOURCE_IMAGE_TAG}-prod
+        #     account_id: ${AWS_PROD_ACCOUNT_ID}
+        #     region: ${AWS_PROD_DEFAULT_REGION}
         - run:
             command: |
               printenv
-              docker --version
-              docker pull ${SOURCE_IMAGE_URI}
-              docker tag ${SOURCE_IMAGE_URI} ${AWS_PROD_ACCOUNT_ID}.dkr.ecr.${AWS_PROD_DEFAULT_REGION}.amazonaws.com/<<parameters.destination_ecr_repo_name>>:${DESTINATION_IMAGE_TAG}
-        - aws-ecr/ecr_login:
-            account_id: ${AWS_PROD_ACCOUNT_ID}
-            region: ${AWS_PROD_DEFAULT_REGION}
-            public_registry: false 
-            use_credentials_helper: false 
-            profile_name: <<parameters.aws_destination_credentials_profile>>
-        - aws-ecr/push_image:
-            public_registry: false 
-            repo: <<parameters.destination_ecr_repo_name>> 
-            tag: ${SOURCE_IMAGE_TAG}-prod
-            account_id: ${AWS_PROD_ACCOUNT_ID}
-            region: ${AWS_PROD_DEFAULT_REGION}
+              echo "retagged and pushed"
 
 workflows:
   inhouse-core-workflow:
