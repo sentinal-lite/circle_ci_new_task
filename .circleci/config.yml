@@ -109,7 +109,8 @@ jobs:
             message: "<<parameters.message>>"
 
     linting-and-unit-tests: 
-      executor: python/default
+      docker:
+        - image: cimg/python:3.12
       steps:
         - checkout
         - python/install-packages:
