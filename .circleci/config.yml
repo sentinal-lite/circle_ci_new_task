@@ -345,8 +345,6 @@ workflows:
                 - main
                 - dev
                 - staging
-              only:
-                - /.*/
           requires:
             - notify
 
