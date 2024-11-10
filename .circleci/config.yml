@@ -249,7 +249,7 @@ jobs:
                 echo "Deployment flag is not true. Skipping Deployment"
               fi
 
-    create_pr:
+    create-pr:
       parameters:
         pr_title:
           type: string
