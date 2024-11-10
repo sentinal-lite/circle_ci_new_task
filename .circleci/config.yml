@@ -107,36 +107,175 @@ jobs:
       steps:
         - slack-notification-customized:
             message: "<<parameters.message>>"
+
     linting: 
-    docker:
-      - image: cimg/python:3.12
-    steps:
-      - checkout
-      - python/install-packages:
-          pkg-manager: poetry
-          args: --no-root
-      - run:
-          command: |
-            peotry run flake8 --version
-            peotry run flake8 
-      - run: 
-          command: |
-            poetry run pytest --version
-            poetry run black src tests --check
-            poetry run isort src tests --check
-      - run:
-          when: on_fail
-          name: Add Comment to PR
-          command: |
-            export PULL_REQUEST_NUMBER=$(echo "${CI_PULL_REQUEST}" | awk -F"/" '{print $7}')
-            printenv
-            curl -L \
-            -X POST \
-            -H "Accept: application/vnd.github+json" \
-            -H "Authorization: Bearer ${GITHUB_COMMENT_PERSONAL_TOKEN}" \
-            -H "X-GitHub-Api-Version: 2022-11-28" \
-            https://api.github.com/repos/${CIRCLE_PROJECT_USERNAME}/${CIRCLE_PROJECT_REPONAME}/issues/${PULL_REQUEST_NUMBER}/comments \
-            -d '{"body":"Oops! This Pull Request is failed while running test cases. Please check the details."}'
+      executor: python/default
+      steps:
+        - checkout
+        - python/install-packages:
+            pkg-manager: poetry
+            args: --no-root
+        - run:
+            command: |
+              peotry run flake8 --version
+              peotry run flake8 
+        - run: 
+            command: |
+              poetry run pytest --version
+              poetry run black src tests --check
+              poetry run isort src tests --check
+        - run:
+            when: on_fail
+            name: Add Comment to PR
+            command: |
+                export PULL_REQUEST_NUMBER=$(echo "${CI_PULL_REQUEST}" | awk -F"/" '{print $7}')
+                printenv
+                curl -L \
+                -X POST \
+                -H "Accept: application/vnd.github+json" \
+                -H "Authorization: Bearer ${GITHUB_REPO_TOKEN}" \
+                -H "X-GitHub-Api-Version: 2022-11-28" \
+                https://api.github.com/repos/${CIRCLE_PROJECT_USERNAME}/${CIRCLE_PROJECT_REPONAME}/issues/${PULL_REQUEST_NUMBER}/comments \
+                -d '{"body":"Oops! This Pull Request is failed while running test cases. Please check the details."}'
+    
+    check-pr-merged-or-not: 
+      docker:
+        - image: cimg/base:2024.11
+      steps:
+        - run:
+            command: |
+              export PULL_REQUEST_NUMBER=$(echo "${CI_PULL_REQUEST}" | awk -F"/" '{print $7}')
+              curl -L \
+              -H "Accept: application/vnd.github+json" \
+              -H "Authorization: Bearer <GITHUB_REPO_TOKEN>" \
+              -H "X-GitHub-Api-Version: 2022-11-28" \
+              https://api.github.com/repos/${CIRCLE_PROJECT_USERNAME}/${CIRCLE_PROJECT_REPONAME}/pulls/${PULL_REQUEST_NUMBER}/merge
+    
+    docker-build-and-push:
+        parameters:
+          ecr_repo_name:
+            type: string
+            default: <<pipeline.parameters.app_name>>
+          docker_image_tag:
+            type: string
+            default: ${CIRCLE_BRANCH}-${CIRCLE_SHA1}-${CIRCLE_BUILD_NUM}
+          aws_profile:
+            type: string
+            default: default
+        executor:
+          name: aws-ecr/default
+        working_directory: ~/application
+        steps:
+          - checkout
+          - run:
+              command: |
+                aws --version
+                jq --version
+          - docker/build:
+              debug: false 
+              docker-context: <<pipeline.parameters.build_path>> 
+              dockerfile: <<pipeline.parameters.dockerfile_name>> 
+              extra_build_args: <<pipeline.parameters.extra_build_args>> 
+              path: <<pipeline.parameters.dockerfile_path>> 
+              lint-dockerfile: false 
+              image: ${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_DEFAULT_REGION}.amazonaws.com/<<parameters.ecr_repo_name>> 
+              tag: <<parameters.docker_image_tag>>
+              treat-warnings-as-errors: false 
+          - run:
+              command: | 
+                echo "Docker Image built with tag ${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_DEFAULT_REGION}.amazonaws.com/<<pipeline.parameters.app_name>>:${CIRCLE_BRANCH}-${CIRCLE_SHA1}-${CIRCLE_BUILD_NUM}"
+          - aws-ecr/ecr_login:
+              public_registry: false 
+              use_credentials_helper: true 
+              profile_name: <<parameters.aws_profile>>
+          - aws-ecr/push_image:
+              public_registry: false 
+              repo: <<parameters.ecr_repo_name>> 
+              tag: <<parameters.docker_image_tag>>
+          - inject_variable:
+              keys: "DESTINATION_IMAGE_TAG,SOURCE_IMAGE_TAG,SOURCE_IMAGE_URI"
+              values: "${CIRCLE_BRANCH}-${CIRCLE_SHA1}-${CIRCLE_BUILD_NUM}-prod,${CIRCLE_BRANCH}-${CIRCLE_SHA1}-${CIRCLE_BUILD_NUM},${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_DEFAULT_REGION}.amazonaws.com/<<pipeline.parameters.app_name>>:${CIRCLE_BRANCH}-${CIRCLE_SHA1}-${CIRCLE_BUILD_NUM}"
+    
+    deploy-ecs-service:
+      parameters:
+        deploy:
+          type: boolean
+          default: false
+        ecr_repo_name:
+          type: string
+          default: <<pipeline.parameters.app_name>> 
+        docker_image_tag:
+          type: string
+          default: ${CIRCLE_BRANCH}-${CIRCLE_SHA1}-${CIRCLE_BUILD_NUM}
+        deploy_environment: 
+          type: string
+          default: dev
+        task_definition_name:
+          type: string
+          default: <<pipeline.parameters.app_name>>-<<parameters.deploy_environment>>-td
+        ecs_service_name:
+          type: string
+          default: <<pipeline.parameters.app_name>>
+        ecs_cluster_name:
+          type: string
+          default: <<pipeline.parameters.org_name>>-<<parameters.deploy_environment>>-cluster
+      executor:
+        name: aws-ecr/default
+      working_directory: ~/application
+      steps:
+        - run:
+            environment:
+              TASK_DEFINITION: <<parameters.task_definition_name>> # <<pipeline.parameters.app_name>>-<<parameter.deploy_environment>>-td 
+            command: |
+              printenv
+              ECS_DEPLOY="<<parameters.deploy>>"
+              if [[ "${ECS_DEPLOY}" == "true" ]]; then 
+                echo "<<parameters.ecs_cluster_name>>"
+                echo "⛳️ Stage: Update"
+                export RELEASE_IMAGE_NAME="${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_DEFAULT_REGION}.amazonaws.com/<<parameters.ecr_repo_name>>:<<parameters.docker_image_tag>>"
+                export IMAGE_NAME="${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_DEFAULT_REGION}.amazonaws.com/<<parameters.ecr_repo_name>>"
+                aws ecs describe-task-definition --task-definition ${TASK_DEFINITION} > TASK_DEFINITION.json
+                cat TASK_DEFINITION.json
+                echo "${IMAGE_NAME} ${RELEASE_IMAGE_NAME}"
+                jq --arg NEW_IMAGE_NAME "${RELEASE_IMAGE_NAME}" --arg SEARCH_ECR_NAME "${IMAGE_NAME}" '.taskDefinition.containerDefinitions[] | (select(.image|contains($SEARCH_ECR_NAME)) | .image |= $NEW_IMAGE_NAME)' TASK_DEFINITION.json > raw_task_definition.txt
+                jq --slurpfile CONTAINER_DEFINITION raw_task_definition.txt --arg SEARCH_ECR_NAME "${IMAGE_NAME}" '.taskDefinition | del(.containerDefinitions[] | (select(.image|contains($SEARCH_ECR_NAME)))) |  .containerDefinitions += $CONTAINER_DEFINITION | del(.taskDefinitionArn) | del(.revision) | del(.status) | del(.requiresAttributes) | del(.compatibilities) | del(.registeredAt) | del(.registeredBy)' TASK_DEFINITION.json > FINAL_TASK_DEFINTIION.json
+                aws ecs register-task-definition --family $TASK_DEFINITION --network-mode awsvpc --region=${AWS_DEFAULT_REGION} --cli-input-json file://FINAL_TASK_DEFINTIION.json 2>&1 > /dev/null
+                LATEST_TD=$(aws ecs describe-task-definition --task-definition ${TASK_DEFINITION} | jq -cr '.taskDefinition.taskDefinitionArn | split("/") | last')
+                echo "Latest Task definition is -> $LATEST_TD "
+                aws ecs update-service --service <<parameters.ecs_service_name>> --cluster <<parameters.ecs_cluster_name>> --task-definition ${LATEST_TD} --force-new-deployment | jq '.service.deployments[] | (select(.status=="PRIMARY")) | del(.createdAt) | del(.networkConfiguration) | del(.platformFamily) | del(.desiredCount) | del(.runningCount) | del(.failedTasks) | del(.pendingCount)' > ECS_SERVICE.json
+              else
+                echo "Deployment flag is not true. Skipping Deployment"
+              fi
+
+    create_pr:
+      parameters:
+        pr_title:
+          type: string
+          default: ""
+        pr_body:
+          type: string
+          default: ""
+        source_branch:
+          type: string
+          default: feature
+        target_branch:
+          type: string
+          default: dev
+      docker:
+        - image: cimg/base:2024.11
+      steps:
+        - run:
+            command: |
+                curl -L \
+                -X POST \
+                -H "Accept: application/vnd.github+json" \
+                -H "Authorization: Bearer ${GITHUB_REPO_TOKEN}" \
+                -H "X-GitHub-Api-Version: 2022-11-28" \
+                https://api.github.com/repos/${CIRCLE_PROJECT_USERNAME}/${CIRCLE_PROJECT_REPONAME}/pulls \
+                -d '{"title": <<parameters.pr_title>>,"body": <<parameters.pr_body>>,"head": <<parameters.source_branch>>,"base": <<parameters.target_branch>>}'
+
+
+
 
 workflows:
   inhouse-core-workflow:
@@ -182,9 +321,17 @@ workflows:
 
       - docker-build-and-push:
           name: dev-build-ecr
+          context: AWS_DEV
 
       - deploy-ecs-service:
           name: dev-environment-deployment
+          deploy: true
+          deploy_environment: staging
+          ecr_repo_name: mvp
+          task_definition_name: mvp-dev-td
+          ecs_service_name: inhouse-core-platform
+          ecs_cluster_name: inhouse-dev-cluster
+          context: AWS_DEV
           require:
             - dev-build-ecr
 
@@ -213,8 +360,8 @@ workflows:
           name: pr-from-dev-to-staging-branch
           source_branch: dev
           target_branch: staging
-          pr_title:
-          pr_body:
+          pr_title: Automated PR from Dev to Staging env
+          pr_body: PR from Dev environment to Staging environment
 
 # PR goes to Reviewer / Maintainer 
       - notify:
@@ -242,9 +389,17 @@ workflows:
 
       - docker-build-and-push:
           name: staging-build-ecr
+          context: AWS_STAGE
 
       - deploy-ecs-service:
           name: staging-environment-deployment
+          deploy: true
+          deploy_environment: staging
+          ecr_repo_name: mvp
+          task_definition_name: mvp-staging-td
+          ecs_service_name: inhouse-core-platform
+          ecs_cluster_name: inhouse-staging-cluster
+          context: AWS_STAGE
           require:
             - staging-build-ecr
 
@@ -268,16 +423,39 @@ workflows:
             - send-production-approval-slack-notification
 
       - docker-retag-and push:
+          name: create-prod-tag
+          source_environment: staging
+          destination_environment: prod
+          source_ecr_repo_name: core-platform
+          destination_ecr_repo_name: core-platform
+          source_image_tag: ${CIRCLE_BRANCH}-${CIRCLE_SHA1}-${CIRCLE_BUILD_NUM}
+          destination_image_tag: ${CIRCLE_BRANCH}-${CIRCLE_SHA1}-${CIRCLE_BUILD_NUM}-prod
+          aws_source_credentials_profile: staging
+          aws_destination_credentials_profile: prod
+          requires:
+            - production-approval
+          context: 
+            - AWS_STAGE
+            - AWS_PROD
 
       - deploy-ecs-service:
-          name: prod
+          name: prod-environment-deployment
+          deploy: true
+          deploy_environment: prod
+          ecr_repo_name: mvp
+          task_definition_name: mvp-prod-td
+          ecs_service_name: inhouse-core-platform
+          ecs_cluster_name: inhouse-prod-cluster
+          context: AWS_PROD
+          require:
+            - create-prod-tag
 
       - create-pr:
           name: pr-from-staging-to-master-branch
           source_branch: dev
           target_branch: staging
-          pr_title:
-          pr_body:
+          pr_title: Automated PR from Staging to Master branch
+          pr_body: PR from Staging environment to Prod environment
 
       - notify:
           name: send-approval-staging-to-prod-notification
@@ -286,7 +464,7 @@ workflows:
           requires:
             - pr-from-stating-to-master-branch
 
-      - dev-approval:
+      - master-approval:
           type: approval
           require:
             - send-approval-staging-to-prod-notification
