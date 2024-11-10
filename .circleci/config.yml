@@ -118,14 +118,14 @@ jobs:
         - run:
             command: |
               echo "Linting"
-              # peotry run flake8 --version
-              # peotry run flake8 
+# peotry run flake8 --version
+# peotry run flake8 
         - run: 
             command: |
               echo "Unit tests"
-              # poetry run pytest --version
-              # poetry run black src tests --check
-              # poetry run isort src tests --check
+# poetry run pytest --version
+# poetry run black src tests --check
+# poetry run isort src tests --check
         - run:
             when: on_fail
             name: Add Comment to PR
@@ -295,7 +295,7 @@ workflows:
                 - main
                 - dev
                 - staging
-          require:
+          requires:
             - notify
 
 # PR goes to Reviewer / Maintainer 
@@ -334,8 +334,9 @@ workflows:
           context: AWS_NON_PROD
           filters:
             branches:
-              - dev
-              - staging
+              only:
+                - dev
+                - staging
 
       - deploy-ecs-service:
           name: dev-environment-deployment
@@ -347,11 +348,12 @@ workflows:
           ecs_service_name: inhouse-core-platform
           ecs_cluster_name: inhouse-${CIRCLE_BRANCH}-cluster
           context: AWS_NON_PROD
-          require:
+          requires:
             - docker-build-and-push
           filters:
             branches:
-              - dev
+              only:
+                - dev
       
       - deploy-ecs-service:
           name: staging-environment-deployment
@@ -363,11 +365,12 @@ workflows:
           ecs_service_name: inhouse-core-platform
           ecs_cluster_name: inhouse-${CIRCLE_BRANCH}-cluster
           context: AWS_NON_PROD
-          require:
+          requires:
             - docker-build-and-push
           filters:
             branches:
-              - staging
+              only:
+                - staging
 
       # - notify:
       #     context: slack-secrets
@@ -390,7 +393,8 @@ workflows:
             - dev-environment-deployment
           filters:
             branches:
-              - dev
+              only:
+                - dev
 
       - notify:
           name: send-production-approval-slack-notification
@@ -400,23 +404,26 @@ workflows:
             - staging-environment-deployment
           filters:
             branches:
-              - staging
+              only:
+                - staging
 
       - staging-approval:
           type: approval
-          require:
+          requires:
             - send-staging-approval-slack-notification
           filters:
             branches:
-              - dev
+              only:
+                - dev
 
       - production-approval:
           type: approval
-          require:
+          requires:
             - send-production-approval-slack-notification
           filters:
             branches:
-              - staging
+              only:
+                - staging
 
       - create-pr:
           name: pr-from-dev-to-staging-branch
@@ -424,11 +431,12 @@ workflows:
           target_branch: staging
           pr_title: Automated PR from Dev to Staging env
           pr_body: PR from Dev environment to Staging environment
-          require:
+          requires:
             - staging-approval
           filters:
             branches:
-              - dev
+              only:
+                - dev
           
       - docker-retag-and push:
           name: create-production-tag
@@ -455,7 +463,7 @@ workflows:
           ecs_service_name: inhouse-core-platform
           ecs_cluster_name: inhouse-production-cluster
           context: AWS_PROD
-          require:
+          requires:
             - create-production-tag
 
       - create-pr:
