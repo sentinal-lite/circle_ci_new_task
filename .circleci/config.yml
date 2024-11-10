@@ -108,7 +108,7 @@ jobs:
         - slack-notification-customized:
             message: "<<parameters.message>>"
 
-    linting: 
+    linting-and-unit-tests: 
       executor: python/default
       steps:
         - checkout
