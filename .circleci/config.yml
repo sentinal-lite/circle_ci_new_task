@@ -113,20 +113,20 @@ jobs:
         - image: cimg/python:3.12
       steps:
         - checkout
-        # - python/install-packages:
-        #     pkg-manager: poetry
-        #     args: --no-root
+        - python/install-packages:
+            pkg-manager: poetry
+            args: --no-root
         - run:
             command: |
               echo "Linting"
-# peotry run flake8 --version
-# peotry run flake8 
+              peotry run flake8 --version
+              peotry run flake8 
         - run: 
             command: |
               echo "Unit tests"
-# poetry run pytest --version
-# poetry run black src tests --check
-# poetry run isort src tests --check
+              poetry run pytest --version
+              poetry run black src tests --check
+              poetry run isort src tests --check
         - success-slack
         - failure-slack
         - run:
@@ -170,30 +170,30 @@ jobs:
               command: |
                 aws --version
                 jq --version
-          # - docker/build:
-          #     debug: false 
-          #     docker-context: <<pipeline.parameters.build_path>> 
-          #     dockerfile: <<pipeline.parameters.dockerfile_name>> 
-          #     extra_build_args: <<pipeline.parameters.extra_build_args>> 
-          #     path: <<pipeline.parameters.dockerfile_path>> 
-          #     lint-dockerfile: false 
-          #     image: ${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_DEFAULT_REGION}.amazonaws.com/<<parameters.ecr_repo_name>> 
-          #     tag: <<parameters.docker_image_tag>>
-          #     treat-warnings-as-errors: false 
+          - docker/build:
+              debug: false 
+              docker-context: <<pipeline.parameters.build_path>> 
+              dockerfile: <<pipeline.parameters.dockerfile_name>> 
+              extra_build_args: <<pipeline.parameters.extra_build_args>> 
+              path: <<pipeline.parameters.dockerfile_path>> 
+              lint-dockerfile: false 
+              image: ${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_DEFAULT_REGION}.amazonaws.com/<<parameters.ecr_repo_name>> 
+              tag: <<parameters.docker_image_tag>>
+              treat-warnings-as-errors: false 
           - run:
               command: | 
                 echo "Docker Image built with tag ${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_DEFAULT_REGION}.amazonaws.com/<<pipeline.parameters.app_name>>:${CIRCLE_BRANCH}-${CIRCLE_SHA1}-${CIRCLE_BUILD_NUM}"
-          # - aws-ecr/ecr_login:
-          #     public_registry: false 
-          #     use_credentials_helper: true 
-          #     profile_name: <<parameters.aws_profile>>
-          # - aws-ecr/push_image:
-          #     public_registry: false 
-          #     repo: <<parameters.ecr_repo_name>> 
-          #     tag: <<parameters.docker_image_tag>>
-          # - inject_variable:
-          #     keys: "DESTINATION_IMAGE_TAG,SOURCE_IMAGE_TAG,SOURCE_IMAGE_URI"
-          #     values: "${CIRCLE_BRANCH}-${CIRCLE_SHA1}-${CIRCLE_BUILD_NUM}-prod,${CIRCLE_BRANCH}-${CIRCLE_SHA1}-${CIRCLE_BUILD_NUM},${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_DEFAULT_REGION}.amazonaws.com/<<pipeline.parameters.app_name>>:${CIRCLE_BRANCH}-${CIRCLE_SHA1}-${CIRCLE_BUILD_NUM}"
+          - aws-ecr/ecr_login:
+              public_registry: false 
+              use_credentials_helper: true 
+              profile_name: <<parameters.aws_profile>>
+          - aws-ecr/push_image:
+              public_registry: false 
+              repo: <<parameters.ecr_repo_name>> 
+              tag: <<parameters.docker_image_tag>>
+          - inject_variable:
+              keys: "DESTINATION_IMAGE_TAG,SOURCE_IMAGE_TAG,SOURCE_IMAGE_URI"
+              values: "${CIRCLE_BRANCH}-${CIRCLE_SHA1}-${CIRCLE_BUILD_NUM}-prod,${CIRCLE_BRANCH}-${CIRCLE_SHA1}-${CIRCLE_BUILD_NUM},${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_DEFAULT_REGION}.amazonaws.com/<<pipeline.parameters.app_name>>:${CIRCLE_BRANCH}-${CIRCLE_SHA1}-${CIRCLE_BUILD_NUM}"
           - success-slack
           - failure-slack
     
@@ -300,44 +300,44 @@ jobs:
         destination_image_tag:
           type: string
       steps:
-        # - load_variables
-        # - aws-cli/install
-        # - aws-cli/setup:
-        #     profile_name: <<parameters.aws_source_credentials_profile>>
-        # - aws-cli/setup:
-        #     profile_name: <<parameters.aws_destination_credentials_profile>>
-        #     aws_access_key_id: AWS_PROD_AWS_ACCESS_KEY_ID
-        #     aws_secret_access_key: AWS_PROD_SECRET_KEY_ID
-        #     region: AWS_PROD_DEFAULT_REGION
-        # - attach_workspace:
-        #     at: .
-        # - aws-ecr/ecr_login:
-        #     public_registry: false 
-        #     use_credentials_helper: false 
-        #     profile_name: <<parameters.aws_source_credentials_profile>>
-        # - setup_remote_docker
-        # - run:
-        #     command: |
-        #       printenv
-        #       docker --version
-        #       docker pull ${SOURCE_IMAGE_URI}
-        #       docker tag ${SOURCE_IMAGE_URI} ${AWS_PROD_ACCOUNT_ID}.dkr.ecr.${AWS_PROD_DEFAULT_REGION}.amazonaws.com/<<parameters.destination_ecr_repo_name>>:${DESTINATION_IMAGE_TAG}
-        # - aws-ecr/ecr_login:
-        #     account_id: ${AWS_PROD_ACCOUNT_ID}
-        #     region: ${AWS_PROD_DEFAULT_REGION}
-        #     public_registry: false 
-        #     use_credentials_helper: false 
-        #     profile_name: <<parameters.aws_destination_credentials_profile>>
-        # - aws-ecr/push_image:
-        #     public_registry: false 
-        #     repo: <<parameters.destination_ecr_repo_name>> 
-        #     tag: ${SOURCE_IMAGE_TAG}-prod
-        #     account_id: ${AWS_PROD_ACCOUNT_ID}
-        #     region: ${AWS_PROD_DEFAULT_REGION}
+        - load_variables
+        - aws-cli/install
+        - aws-cli/setup:
+            profile_name: <<parameters.aws_source_credentials_profile>>
+        - aws-cli/setup:
+            profile_name: <<parameters.aws_destination_credentials_profile>>
+            aws_access_key_id: AWS_PROD_AWS_ACCESS_KEY_ID
+            aws_secret_access_key: AWS_PROD_SECRET_KEY_ID
+            region: AWS_PROD_DEFAULT_REGION
+        - attach_workspace:
+            at: .
+        - aws-ecr/ecr_login:
+            public_registry: false 
+            use_credentials_helper: false 
+            profile_name: <<parameters.aws_source_credentials_profile>>
+        - setup_remote_docker
         - run:
             command: |
               printenv
-              echo "retagged and pushed"
+              docker --version
+              docker pull ${SOURCE_IMAGE_URI}
+              docker tag ${SOURCE_IMAGE_URI} ${AWS_PROD_ACCOUNT_ID}.dkr.ecr.${AWS_PROD_DEFAULT_REGION}.amazonaws.com/<<parameters.destination_ecr_repo_name>>:${DESTINATION_IMAGE_TAG}
+        - aws-ecr/ecr_login:
+            account_id: ${AWS_PROD_ACCOUNT_ID}
+            region: ${AWS_PROD_DEFAULT_REGION}
+            public_registry: false 
+            use_credentials_helper: false 
+            profile_name: <<parameters.aws_destination_credentials_profile>>
+        - aws-ecr/push_image:
+            public_registry: false 
+            repo: <<parameters.destination_ecr_repo_name>> 
+            tag: ${SOURCE_IMAGE_TAG}-prod
+            account_id: ${AWS_PROD_ACCOUNT_ID}
+            region: ${AWS_PROD_DEFAULT_REGION}
+        # - run:
+        #     command: |
+        #       printenv
+        #       echo "retagged and pushed"
         - success-slack
         - failure-slack
 
@@ -360,16 +360,16 @@ workflows:
 
 # PR goes to Reviewer / Maintainer 
 
-      # - notify:
-      #     name: send-approval-feature-to-dev-notification
-      #     context: slack-secrets
-      #     message: PR approval waiting -> ${CIRCLE_PULL_REQUEST}
-      #     filters:
-      #       branches:
-      #         only:
-      #           - dev
-      #           - staging
-      #           - main
+      - notify:
+          name: send-approval-feature-to-dev-notification
+          context: slack-secrets
+          message: PR approval waiting -> ${CIRCLE_PULL_REQUEST}
+          filters:
+            branches:
+              ignore:
+                - dev
+                - staging
+                - main
 
       # - dev-approval:
       #     type: approval
@@ -400,8 +400,8 @@ workflows:
 
       - deploy-ecs-service:
           name: dev-environment-deployment
-          # deploy: true
-          deploy: false
+          deploy: true
+          # deploy: false
           deploy_environment: ${CIRCLE_BRANCH}
           ecr_repo_name: mvp
           task_definition_name: mvp-${CIRCLE_BRANCH}-td
@@ -417,8 +417,8 @@ workflows:
       
       - deploy-ecs-service:
           name: staging-environment-deployment
-          # deploy: true
-          deploy: false
+          deploy: true
+          # deploy: false
           deploy_environment: ${CIRCLE_BRANCH}
           ecr_repo_name: mvp
           task_definition_name: mvp-${CIRCLE_BRANCH}-td
@@ -497,6 +497,15 @@ workflows:
             branches:
               only:
                 - dev
+
+      - notify:
+          name: send-approval-dev-to-staging-notification
+          context: slack-secrets
+          message: PR approval waiting -> ${CIRCLE_PULL_REQUEST}
+          filters:
+            branches:
+              only:
+                - dev
           
       - docker-retag-push:
           name: create-production-tag
@@ -516,8 +525,8 @@ workflows:
 
       - deploy-ecs-service:
           name: production-environment-deployment
-#         deploy: true
-          deploy: false
+        deploy: true
+          # deploy: false
           deploy_environment: production
           ecr_repo_name: mvp
           task_definition_name: mvp-production-td
@@ -535,6 +544,15 @@ workflows:
           pr_body: PR from Staging environment to Prod environment
           requires:
             - production-environment-deployment
+      
+      - notify:
+          name: send-approval-staging-to-prod-notification
+          context: slack-secrets
+          message: PR approval waiting -> ${CIRCLE_PULL_REQUEST}
+          filters:
+            branches:
+              only:
+                - staging      
 
 # PR goes to Reviewer / Maintainer 
 
