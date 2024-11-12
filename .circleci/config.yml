@@ -158,7 +158,7 @@ jobs:
                   echo "export PR=\"true\"" >> $BASH_ENV
                 else
                   echo "export PR=\"false\"" >> $BASH_ENV
-                
+                fi
         - slack-notification-customized:
             message: "Linting completed! You can now merge the PR"
             when:
