@@ -155,22 +155,13 @@ jobs:
 
 
                 if [ $status_code -eq 200 ]; then
-                  echo "export PR=\"true\"" >> $BASH_ENV
+                  PR_URL = jq '.[].url'
+                  echo "export SLACK_MESSAGE=\"Linting is completed! You can merge a PR : $PR_URL"\" >> $BASH_ENV
                 else
-                  echo "export PR=\"false\"" >> $BASH_ENV
+                  echo "export SLACK_MESSAGE=\"Linting is completed! You can now raise a PR!\"" >> $BASH_ENV
                 fi
         - slack-notification-customized:
-            message: "Linting completed! You can now merge the PR"
-            when:
-              equal: [true, PR]
-        
-        - slack-notification-customized:
-            message: "Linting is completed! You can now raise a PR!"
-            when:
-              equal: [false, PR]
-
-
-
+            message: "${SLACK_MESSAGE}"
 
 
     docker-build-and-push:
