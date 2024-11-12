@@ -349,6 +349,16 @@ jobs:
         - success-slack
         - failure-slack
 
+    create-branch:
+      docker:
+        - image: cimg/base:2024.11
+      steps:
+        - run:
+            name: Get-SHA
+            command: |
+        - run:
+            name: Create branch    
+
 workflows:
   inhouse-core-workflow:
     jobs:
@@ -512,6 +522,10 @@ workflows:
             - AWS_PROD
             - slack-secrets
 
+      - create-branch:
+          name: create-duplicate-branch
+
+
       - deploy-ecs-service:
           name: production-environment-deployment
           deploy: false
@@ -546,4 +560,7 @@ workflows:
           filters:
             branches:
               only:
-                - staging      
+                - staging
+
+      - create-github-tag:
+          name:       
