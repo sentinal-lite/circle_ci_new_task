@@ -26,9 +26,6 @@ parameters:
   dockerfile_path:
     type: string
     default: "docker"
-  aws_profile:
-    type: string
-    default: "default"
 
 commands:
   inject_variable:
@@ -107,27 +104,39 @@ jobs:
       steps:
         - slack-notification-customized:
             message: "<<parameters.message>>"
+        - run:
+            command: |
+              printenv
+
+    check-pr-exists-or-not:
+      name: check-pr-exists-or-not
+      context: Github-secrets
+      filters:
+        branches:
+          ignore:
+            - main
+            - dev
+            - staging
 
     linting-and-unit-tests: 
       docker:
         - image: cimg/python:3.12
       steps:
         - checkout
-        - python/install-packages:
-            pkg-manager: poetry
-            args: --no-root
-        - run:
-            command: |
-              echo "Linting"
-              peotry run flake8 --version
-              peotry run flake8 
-        - run: 
-            command: |
-              echo "Unit tests"
-              poetry run pytest --version
-              poetry run black src tests --check
-              poetry run isort src tests --check
-        - success-slack
+        # - python/install-packages:
+        #     pkg-manager: poetry
+        #     args: --no-root
+        # - run:
+        #     command: |
+        #       echo "Linting"
+        #       peotry run flake8 --version
+        #       peotry run flake8 
+        # - run: 
+        #     command: |
+        #       echo "Unit tests"
+        #       poetry run pytest --version
+        #       poetry run black src tests --check
+        #       poetry run isort src tests --check
         - failure-slack
         - run:
             when: on_fail
@@ -136,19 +145,6 @@ jobs:
                 export PULL_REQUEST_NUMBER=$(echo "${CI_PULL_REQUEST}" | awk -F"/" '{print $7}')
                 printenv
                 curl -L -X POST -H "Accept: application/vnd.github+json" -H "Authorization: Bearer ${GITHUB_REPO_TOKEN}" -H "X-GitHub-Api-Version: 2022-11-28" https://api.github.com/repos/${CIRCLE_PROJECT_USERNAME}/${CIRCLE_PROJECT_REPONAME}/issues/${PULL_REQUEST_NUMBER}/comments -d '{"body":"Oops! This Pull Request is failed while running test cases. Please check the details."}'
-    
-    # check-pr-merged-or-not: 
-    #   docker:
-    #     - image: cimg/base:2024.11
-    #   steps:
-    #     - run:
-    #         command: |
-    #           export PULL_REQUEST_NUMBER=$(echo "${CI_PULL_REQUEST}" | awk -F"/" '{print $7}')
-    #           curl -L \
-    #           -H "Accept: application/vnd.github+json" \
-    #           -H "Authorization: Bearer <GITHUB_REPO_TOKEN>" \
-    #           -H "X-GitHub-Api-Version: 2022-11-28" \
-    #           https://api.github.com/repos/${CIRCLE_PROJECT_USERNAME}/${CIRCLE_PROJECT_REPONAME}/pulls/${PULL_REQUEST_NUMBER}/merge
     
     docker-build-and-push:
         parameters:
@@ -194,9 +190,7 @@ jobs:
           - inject_variable:
               keys: "DESTINATION_IMAGE_TAG,SOURCE_IMAGE_TAG,SOURCE_IMAGE_URI"
               values: "${CIRCLE_BRANCH}-${CIRCLE_SHA1}-${CIRCLE_BUILD_NUM}-prod,${CIRCLE_BRANCH}-${CIRCLE_SHA1}-${CIRCLE_BUILD_NUM},${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_DEFAULT_REGION}.amazonaws.com/<<pipeline.parameters.app_name>>:${CIRCLE_BRANCH}-${CIRCLE_SHA1}-${CIRCLE_BUILD_NUM}"
-          - success-slack
           - failure-slack
-    
     deploy-ecs-service:
       parameters:
         deploy:
@@ -276,8 +270,24 @@ jobs:
         - run:
             command: |
                 curl -L -X POST -H "Accept: application/vnd.github+json" -H "Authorization: Bearer ${GITHUB_REPO_TOKEN}" -H "X-GitHub-Api-Version: 2022-11-28" https://api.github.com/repos/${CIRCLE_PROJECT_USERNAME}/${CIRCLE_PROJECT_REPONAME}/pulls -d '{"title": "<< parameters.pr_title >>","body": "<< parameters.pr_body >>","head": "<< parameters.source_branch >>","base": "<< parameters.target_branch >>"}'
-        - success-slack
         - failure-slack
+
+    check-pr-exists-or-not:
+      parameters:
+      docker:
+        - image: cimg/base:2024.11
+      steps:
+        - run:
+            command: |
+                echo "Checking PR status!"
+        - run:
+            command: |
+                curl -L \
+                -H "Accept: application/vnd.github+json" \
+                -H "Authorization: Bearer ${GITHUB_REPO_TOKEN}" \
+                -H "X-GitHub-Api-Version: 2022-11-28" \
+                "https://api.github.com/repos/${CIRCLE_PROJECT_USERNAME}/${CIRCLE_PROJECT_REPONAME}/pulls?base=dev&state=open"
+
 
     docker-retag-push:
       executor: aws-cli/default
@@ -334,19 +344,14 @@ jobs:
             tag: ${SOURCE_IMAGE_TAG}-prod
             account_id: ${AWS_PROD_ACCOUNT_ID}
             region: ${AWS_PROD_DEFAULT_REGION}
-        # - run:
-        #     command: |
-        #       printenv
-        #       echo "retagged and pushed"
         - success-slack
         - failure-slack
 
 workflows:
-  inhouse-core-workflow:
+  cicd:
     jobs:
       - notify:
           context: slack-secrets
-
       - linting-and-unit-tests:
           name: pr-lint-test
           filters:
@@ -357,41 +362,27 @@ workflows:
                 - staging
           requires:
             - notify
-
-# PR goes to Reviewer / Maintainer 
+          context: 
+            - slack-secrets
+            - Github-secrets
 
       - notify:
           name: send-approval-feature-to-dev-notification
           context: slack-secrets
-          message: PR approval waiting -> ${CIRCLE_PULL_REQUEST}
+          message: Linting and Unit test cases ran successfully. You can raise a PR or merge the already existing PR
           filters:
             branches:
               ignore:
                 - dev
                 - staging
                 - main
-
-      # - dev-approval:
-      #     type: approval
-      #     require:
-      #       - send-approval-feature-to-dev-notification
-      #     filters:
-      #       branches:
-      #         only:
-      #           - dev
-
-      # - check-pr-merged-or-not:
-      #     name: check-feature-to-dev-pr-merged-or-not
-
-# Dev-workflow starts
-      # - notify:
-      #     context: slack-secrets
-      #     message: Dev environment workflow §
-      #     require:
-      #       - check-feature-to-dev-pr-merged-or-not
+          requires:
+            - pr-lint-test
 
       - docker-build-and-push:
-          context: AWS_NON_PROD
+          context: 
+            - AWS
+            - slack-secrets
           filters:
             branches:
               only:
@@ -400,66 +391,52 @@ workflows:
 
       - deploy-ecs-service:
           name: dev-environment-deployment
-          deploy: true
-          # deploy: false
+          deploy: false
           deploy_environment: ${CIRCLE_BRANCH}
-          ecr_repo_name: mvp
-          task_definition_name: mvp-${CIRCLE_BRANCH}-td
-          ecs_service_name: inhouse-core-platform
-          ecs_cluster_name: inhouse-${CIRCLE_BRANCH}-cluster
-          context: AWS_NON_PROD
+          ecr_repo_name: <<pipeline.parameters.app_name>>
+          task_definition_name: <<pipeline.parameters.app_name>>-${CIRCLE_BRANCH}-td
+          ecs_service_name: <<pipeline.parameters.org_name>>-<<pipeline.parameters.app_name>>
+          ecs_cluster_name: <<pipeline.parameters.org_name>>-${CIRCLE_BRANCH}-cluster
+          context: 
+            - AWS
+            - slack-secrets
           requires:
             - docker-build-and-push
           filters:
             branches:
               only:
                 - dev
-      
       - deploy-ecs-service:
           name: staging-environment-deployment
-          deploy: true
-          # deploy: false
+          deploy: false
           deploy_environment: ${CIRCLE_BRANCH}
-          ecr_repo_name: mvp
-          task_definition_name: mvp-${CIRCLE_BRANCH}-td
-          ecs_service_name: inhouse-core-platform
-          ecs_cluster_name: inhouse-${CIRCLE_BRANCH}-cluster
-          context: AWS_NON_PROD
+          ecr_repo_name: <<pipeline.parameters.app_name>>
+          task_definition_name: <<pipeline.parameters.app_name>>-${CIRCLE_BRANCH}-td
+          ecs_service_name: <<pipeline.parameters.org_name>>-<<pipeline.parameters.app_name>>
+          ecs_cluster_name: <<pipeline.parameters.org_name>>-${CIRCLE_BRANCH}-cluster
+          context: 
+            - AWS
+            - slack-secrets
           requires:
             - docker-build-and-push
           filters:
             branches:
               only:
                 - staging
-
-      # - notify:
-      #     context: slack-secrets
-      #     message: Dev deployment finished!
-      #     require:
-      #       - dev-environment-deployment
-
-# For adding sanity tests or other tests
-# More tests (if any)
-
-
-# Adding condition:
-# if branch == dev : message: "Approval for staging"
-# if branch == staging: message " Approval for prod"
       - notify:
           name: send-staging-approval-slack-notification
           context: slack-secrets
-          message: Approval pending for staging env
+          message: Code is deployed to dev environment. Developer Please perform the sanity and once done, approve on Circle CI.
           requires:
             - dev-environment-deployment
           filters:
             branches:
               only:
                 - dev
-
       - notify:
           name: send-production-approval-slack-notification
           context: slack-secrets
-          message: Approval pending for prod
+          message: Code is deployed to dev environment. QA Please perform the sanity and once done, Maintainers on Circle CI. Once approved this will trigger the production deployment.
           requires:
             - staging-environment-deployment
           filters:
@@ -487,21 +464,15 @@ workflows:
 
       - create-pr:
           name: pr-from-dev-to-staging-branch
+          context: 
+            - Github-secrets
+            - slack-secrets
           source_branch: dev
           target_branch: staging
-          pr_title: Automated PR from Dev to Staging env
-          pr_body: PR from Dev environment to Staging environment
+          pr_title: "[CircleCI] Merge code from dev to staging"
+          pr_body: "This is an automated pull request generated by Circle CI agent as the code is approved on dev environment and is ready to be deployed and tested out on staging"
           requires:
             - staging-approval
-          filters:
-            branches:
-              only:
-                - dev
-
-      - notify:
-          name: send-approval-dev-to-staging-notification
-          context: slack-secrets
-          message: PR approval waiting -> ${CIRCLE_PULL_REQUEST}
           filters:
             branches:
               only:
@@ -511,8 +482,8 @@ workflows:
           name: create-production-tag
           source_environment: staging
           destination_environment: production
-          source_ecr_repo_name: core-platform
-          destination_ecr_repo_name: core-platform
+          source_ecr_repo_name: <<pipeline.parameters.app_name>>
+          destination_ecr_repo_name: <<pipeline.parameters.app_name>>
           source_image_tag: ${CIRCLE_BRANCH}-${CIRCLE_SHA1}-${CIRCLE_BUILD_NUM}
           destination_image_tag: ${CIRCLE_BRANCH}-${CIRCLE_SHA1}-${CIRCLE_BUILD_NUM}-production
           aws_source_credentials_profile: staging
@@ -520,19 +491,26 @@ workflows:
           requires:
             - production-approval
           context: 
-            - AWS_NON_PROD
+            - AWS
             - AWS_PROD
+            - slack-secrets
+
+      - create-staging-duplicate-branch:
+          requires: 
+            - create-production-tag
+          
 
       - deploy-ecs-service:
           name: production-environment-deployment
-        deploy: true
-          # deploy: false
+          deploy: false
           deploy_environment: production
-          ecr_repo_name: mvp
-          task_definition_name: mvp-production-td
-          ecs_service_name: inhouse-core-platform
-          ecs_cluster_name: inhouse-production-cluster
-          context: AWS_PROD
+          ecr_repo_name: <<pipeline.parameters.app_name>>
+          task_definition_name: <<pipeline.parameters.app_name>>-production-td
+          ecs_service_name: <<pipeline.parameters.org_name>>-<<pipeline.parameters.app_name>>
+          ecs_cluster_name: <<pipeline.parameters.org_name>>-production-cluster
+          context: 
+            - AWS_PROD	
+            - slack-secrets
           requires:
             - create-production-tag
 
@@ -540,10 +518,14 @@ workflows:
           name: pr-from-staging-to-main-branch
           source_branch: staging
           target_branch: main
-          pr_title: Automated PR from Staging to Master branch
-          pr_body: PR from Staging environment to Prod environment
+          pr_title: "[CircleCI] Merge code from staging to master"
+          pr_body: "This is an automated pull request generated by Circle CI agent as the code is approved on staging environment and is ready to be deployed and tested out on production. Deployment is done on production, so only merge if you think that this deployment is working fine."
           requires:
             - production-environment-deployment
+          context:
+            - slack-secrets
+            - Github-secrets
+
       
       - notify:
           name: send-approval-staging-to-prod-notification
@@ -552,114 +534,4 @@ workflows:
           filters:
             branches:
               only:
-                - staging      
-
-# PR goes to Reviewer / Maintainer 
-
-      # - notify:
-      #     name: send-approval-dev-to-staging-notification
-      #     context: slack-secrets
-      #     message: PR approval waiting -> ${CIRCLE_PULL_REQUEST}
-      #     requires:
-      #       - pr-from-dev-to-staging-branch
-
-
-
-
-#       - dev-approval:
-#           type: approval
-#           require:
-#             - send-approval-dev-to-staging-notification
-
-#       - check-pr-merged-or-not:
-#           name: check-dev-to-staging-pr-merged-or-not
-#           require:
-#             - pr-from-dev-to-staging-branch
-# # Staging-workflow starts
-#       - notify:
-#           context: slack-secrets
-#           message: Staging environment workflow §
-#           require:
-#             - check-dev-to-staging-pr-merged-or-not
-
-#       - docker-build-and-push:
-#           name: staging-build-ecr
-#           context: AWS_STAGE
-
-#       - deploy-ecs-service:
-#           name: staging-environment-deployment
-#           deploy: true
-#           deploy_environment: staging
-#           ecr_repo_name: mvp
-#           task_definition_name: mvp-staging-td
-#           ecs_service_name: inhouse-core-platform
-#           ecs_cluster_name: inhouse-staging-cluster
-#           context: AWS_STAGE
-#           require:
-#             - staging-build-ecr
-
-#       - notify:
-#           context: slack-secrets
-#           message: Staging deployment finished!
-#           require:
-#             - staging-environment-deployment
-
-# # For adding sanity tests or other tests
-# # More tests (if any)
-#       - slack/on-hold:
-#           name: send-production-approval-slack-notification
-#           context: slack-secrets
-#           requires:
-#             - staging-environment-deployment
-
-#       - production-approval:
-#           type: approval
-#           require:
-#             - send-production-approval-slack-notification
-
-#       - docker-retag-and push:
-#           name: create-prod-tag
-#           source_environment: staging
-#           destination_environment: prod
-#           source_ecr_repo_name: core-platform
-#           destination_ecr_repo_name: core-platform
-#           source_image_tag: ${CIRCLE_BRANCH}-${CIRCLE_SHA1}-${CIRCLE_BUILD_NUM}
-#           destination_image_tag: ${CIRCLE_BRANCH}-${CIRCLE_SHA1}-${CIRCLE_BUILD_NUM}-prod
-#           aws_source_credentials_profile: staging
-#           aws_destination_credentials_profile: prod
-#           requires:
-#             - production-approval
-#           context: 
-#             - AWS_STAGE
-#             - AWS_PROD
-
-#       - deploy-ecs-service:
-#           name: prod-environment-deployment
-#           deploy: true
-#           deploy_environment: prod
-#           ecr_repo_name: mvp
-#           task_definition_name: mvp-prod-td
-#           ecs_service_name: inhouse-core-platform
-#           ecs_cluster_name: inhouse-prod-cluster
-#           context: AWS_PROD
-#           require:
-#             - create-prod-tag
-
-#       - create-pr:
-#           name: pr-from-staging-to-master-branch
-#           source_branch: dev
-#           target_branch: staging
-#           pr_title: Automated PR from Staging to Master branch
-#           pr_body: PR from Staging environment to Prod environment
-
-#       - notify:
-#           name: send-approval-staging-to-prod-notification
-#           context: slack-secrets
-#           message: PR approval waiting -> ${CIRCLE_PULL_REQUEST}
-#           requires:
-#             - pr-from-stating-to-master-branch
-
-#       - master-approval:
-#           type: approval
-#           require:
-#             - send-approval-staging-to-prod-notification
+                - staging  
