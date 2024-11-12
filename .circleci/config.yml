@@ -337,7 +337,7 @@ jobs:
         - failure-slack
 
 workflows:
-  cicd:
+  inhouse-core-workflow:
     jobs:
       - notify:
           context: slack-secrets
