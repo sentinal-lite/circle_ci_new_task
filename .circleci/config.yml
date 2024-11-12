@@ -381,14 +381,14 @@ workflows:
       - check-pr-status:
           name: check-pr-exists-or-not
           context: Github-secrets
+          requires:
+            - pr-lint-test
           filters:
             branches:
               ignore:
                 - main
                 - dev
                 - staging
-            requires:
-              - pr-lint-test
 
       - notify:
           name: send-approval-feature-to-dev-notification
