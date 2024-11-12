@@ -144,22 +144,22 @@ jobs:
             command: |
                 echo "Checking PR status!"
         - run:
+            name: Get PR Status
             command: |
-                status_code = $(curl -L \
+              status_code=$(curl -L \
                 -H "Accept: application/vnd.github+json" \
                 -H "Authorization: Bearer ${GITHUB_REPO_TOKEN}" \
                 -H "X-GitHub-Api-Version: 2022-11-28" \
                 -o res.json \
-                -w "%{http_code}"
+                -w "%{http_code}" \
                 "https://api.github.com/repos/${CIRCLE_PROJECT_USERNAME}/${CIRCLE_PROJECT_REPONAME}/pulls?base=dev&state=open")
-
-
-                if [ $status_code -eq 200 ]; then
-                  PR_URL = jq '.[].url'
-                  echo "export SLACK_MESSAGE=\"Linting is completed! You can merge a PR : $PR_URL"\" >> $BASH_ENV
-                else
-                  echo "export SLACK_MESSAGE=\"Linting is completed! You can now raise a PR!\"" >> $BASH_ENV
-                fi
+              
+              if [ $status_code -eq 200 ]; then
+                PR_URL=$(jq -r '.[0].html_url' res.json)
+                echo "export SLACK_MESSAGE=\"Linting is completed! You can merge a PR: ${PR_URL}\"" >> $BASH_ENV
+              else
+                echo "export SLACK_MESSAGE=\"Linting is completed! You can now raise a PR!\"" >> $BASH_ENV
+              fi
         - slack-notification-customized:
             message: "${SLACK_MESSAGE}"
 
@@ -371,7 +371,9 @@ workflows:
 
       - check-pr-status:
           name: check-pr-exists-or-not
-          context: Github-secrets
+          context: 
+            - Github-secrets
+            - slack-secrets
           requires:
             - pr-lint-test
           filters:
